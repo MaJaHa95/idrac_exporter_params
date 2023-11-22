@@ -17,6 +17,8 @@ type HostConfig struct {
 
 type RootConfig struct {
 	mutex         sync.Mutex
+	Verbose       bool                   `yaml:"verbose"`
+	SingleHost    string                 `yaml:"singleHost"`
 	Address       string                 `yaml:"address"`
 	Port          uint                   `yaml:"port"`
 	MetricsPrefix string                 `yaml:"metrics_prefix"`

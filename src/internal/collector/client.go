@@ -4,8 +4,10 @@ import (
 	"crypto/tls"
 	"encoding/json"
 	"fmt"
+	"sync"
 	"github.com/mrlhansen/idrac_exporter/internal/config"
 	"github.com/mrlhansen/idrac_exporter/internal/logging"
+	"github.com/mrlhansen/idrac_exporter/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"net/http"
 	"strconv"
@@ -16,15 +18,25 @@ import (
 const redfishRootPath = "/redfish/v1"
 
 type Client struct {
-	hostname    string
-	basicAuth   string
-	httpClient  *http.Client
-	systemPath  string
-	thermalPath string
-	powerPath   string
-	storagePath string
-	memoryPath  string
+	configMu        *sync.Mutex
+	requestMu       *sync.Mutex
+	
+	hostname        string
+	basicAuth       string
+	httpClient      *http.Client
+	systemPath      string
+	thermalPath     string
+	powerPath       string
+	storagePath     string
+	memoryPath      string
+
+	foundEndpoints  bool
+
+	retries         uint
 }
+
+var clientsMu sync.Mutex
+var clients = map[string]*Client{}
 
 func newHttpClient() *http.Client {
 	return &http.Client{
@@ -35,16 +47,47 @@ func newHttpClient() *http.Client {
 	}
 }
 
-func NewClient(hostConfig *config.HostConfig) (*Client, error) {
-	client := &Client{
-		hostname:   hostConfig.Hostname,
-		basicAuth:  hostConfig.Token,
-		httpClient: newHttpClient(),
-	}
+func GetClient(target string) (*Client, error) {
+	clientsMu.Lock()
+	client, ok := clients[target]
+	if !ok {
+		hostConfig := config.Config.GetHostCfg(target)
+		client = &Client{
+			hostname:   hostConfig.Hostname,
+			basicAuth:  hostConfig.Token,
+			httpClient: newHttpClient(),
+		}
+		
+		client.configMu = new(sync.Mutex)
+		client.requestMu = new(sync.Mutex)
 
-	err := client.findAllEndpoints()
-	if err != nil {
-		return nil, err
+		clients[target] = client
+	}
+	clientsMu.Unlock()
+	
+	logging.Debugf("Got client for target '%s'", target)
+	
+	client.configMu.Lock()
+	defer client.configMu.Unlock()
+
+	if !client.foundEndpoints {
+		if client.retries >= config.Config.Retries {
+			return nil, fmt.Errorf("host unreachable after %d retries", client.retries)
+		}
+
+		logging.Debugf("Finding endpoints for target '%s'...", target)
+
+		if err := client.findAllEndpoints(); err != nil {
+			client.retries++
+
+			logging.Errorf("Error finding endpoints for target '%s': %s", target, err.Error())
+
+			return nil, err
+		}
+
+		logging.Debugf("Found endpoints for target '%s'", target)
+		
+		client.foundEndpoints = true
 	}
 
 	return client, nil
@@ -96,7 +139,7 @@ func (client *Client) findAllEndpoints() error {
 	return nil
 }
 
-func (client *Client) RefreshSensors(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshSensors(mc *metrics.SensorsMetricGroup, ch chan<- prometheus.Metric) error {
 	var resp ThermalResponse
 
 	err := client.redfishGet(client.thermalPath, &resp)
@@ -137,7 +180,7 @@ func (client *Client) RefreshSensors(mc *Collector, ch chan<- prometheus.Metric)
 	return nil
 }
 
-func (client *Client) RefreshSystem(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshSystem(mc *metrics.SystemMetricGroup, ch chan<- prometheus.Metric) error {
 	var resp SystemResponse
 
 	err := client.redfishGet(client.systemPath, &resp)
@@ -156,7 +199,7 @@ func (client *Client) RefreshSystem(mc *Collector, ch chan<- prometheus.Metric) 
 	return nil
 }
 
-func (client *Client) RefreshPower(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshPower(mc *metrics.PowerMetricGroup, ch chan<- prometheus.Metric) error {
 	var resp PowerResponse
 
 	err := client.redfishGet(client.powerPath, &resp)
@@ -196,7 +239,7 @@ func (client *Client) RefreshPower(mc *Collector, ch chan<- prometheus.Metric) e
 	return nil
 }
 
-func (client *Client) RefreshIdracSel(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshIdracSel(mc *metrics.IdracSelMetricGroup, ch chan<- prometheus.Metric) error {
 	var resp IdracSelResponse
 
 	err := client.redfishGet(redfishRootPath+"/Managers/iDRAC.Embedded.1/Logs/Sel", &resp)
@@ -215,7 +258,7 @@ func (client *Client) RefreshIdracSel(mc *Collector, ch chan<- prometheus.Metric
 	return nil
 }
 
-func (client *Client) RefreshStorage(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshStorage(mc *metrics.StorageMetricGroup, ch chan<- prometheus.Metric) error {
 	var group GroupResponse
 	var controller StorageController
 	var d Drive
@@ -246,7 +289,7 @@ func (client *Client) RefreshStorage(mc *Collector, ch chan<- prometheus.Metric)
 	return nil
 }
 
-func (client *Client) RefreshMemory(mc *Collector, ch chan<- prometheus.Metric) error {
+func (client *Client) RefreshMemory(mc *metrics.MemoryMetricGroup, ch chan<- prometheus.Metric) error {
 	var group GroupResponse
 	var m Memory
 
@@ -275,6 +318,10 @@ func (client *Client) RefreshMemory(mc *Collector, ch chan<- prometheus.Metric) 
 }
 
 func (client *Client) redfishGet(path string, res interface{}) error {
+	
+	client.requestMu.Lock()
+	defer client.requestMu.Unlock()
+
 	url := "https://" + client.hostname + path
 
 	req, err := http.NewRequest("GET", url, nil)

@@ -20,8 +20,14 @@ func main() {
 
 	config.ReadConfigFile(configFile)
 
+	if !verbose {
+		verbose = config.Config.Verbose
+	}
+
 	if verbose {
 		logging.SetVerbose(true)
+
+		logging.Info("Verbose mode enabled")
 	}
 
 	http.HandleFunc("/metrics", MetricsHandler)
@@ -31,6 +37,10 @@ func main() {
 
 	logging.Infof("Build information: version=%s revision=%s", version.Version, version.Revision)
 	logging.Infof("Server listening on %s", bind)
+
+	if config.Config.SingleHost != "" {
+		logging.Infof("Running in single host mode. Only responding to requests for '%s'", config.Config.SingleHost)
+	}
 
 	err := http.ListenAndServe(bind, nil)
 	if err != nil {

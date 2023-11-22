@@ -16,4 +16,4 @@ if [ ! -e "$config" ]; then
 
 fi
 
-exec bin/idrac_exporter
+exec bin/idrac_exporter $@
