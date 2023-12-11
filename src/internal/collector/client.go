@@ -18,8 +18,8 @@ import (
 const redfishRootPath = "/redfish/v1"
 
 type Client struct {
-	configMu        *sync.Mutex
-	requestMu       *sync.Mutex
+	configMu        sync.Mutex
+	requestMu       sync.Mutex
 	
 	hostname        string
 	basicAuth       string
@@ -58,20 +58,17 @@ func GetClient(target string) (*Client, error) {
 			httpClient: newHttpClient(),
 		}
 		
-		client.configMu = new(sync.Mutex)
-		client.requestMu = new(sync.Mutex)
-
 		clients[target] = client
 	}
 	clientsMu.Unlock()
 	
-	logging.Debugf("Got client for target '%s'", target)
+	logging.Infof("Got client for target '%s'", target)
 	
 	client.configMu.Lock()
 	defer client.configMu.Unlock()
 
 	if !client.foundEndpoints {
-		if client.retries >= config.Config.Retries {
+		if config.Config.Retries > 0 && client.retries > config.Config.Retries {
 			return nil, fmt.Errorf("host unreachable after %d retries", client.retries)
 		}
 
@@ -80,13 +77,14 @@ func GetClient(target string) (*Client, error) {
 		if err := client.findAllEndpoints(); err != nil {
 			client.retries++
 
-			logging.Errorf("Error finding endpoints for target '%s': %s", target, err.Error())
+			logging.Errorf(err, "Error finding endpoints for target '%s'", target)
 
 			return nil, err
 		}
 
-		logging.Debugf("Found endpoints for target '%s'", target)
+		logging.Infof("Found endpoints for target '%s'", target)
 		
+		client.retries = 0
 		client.foundEndpoints = true
 	}
 
@@ -339,7 +337,7 @@ func (client *Client) redfishGet(path string, res interface{}) error {
 		defer resp.Body.Close()
 	}
 	if err != nil {
-		logging.Debugf("Failed to query url %q: %v", url, err)
+		logging.Errorf(err, "Failed to query url %q: %v")
 		return err
 	}
 

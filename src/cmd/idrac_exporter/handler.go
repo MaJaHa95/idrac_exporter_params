@@ -34,14 +34,14 @@ func getTargetParam(req *http.Request) (string, error) {
 	
 	if target == "" {
 		if forcedTarget == "" {
-			logging.Errorf("Received request from %s without 'target' parameter", req.Host)
+			logging.Errorf(nil, "Received request from %s without 'target' parameter", req.Host)
 
 			return "", errors.New("Query parameter 'target' is mandatory")
 		} else {
 			return forcedTarget, nil
 		}
 	} else if forcedTarget != "" && target != forcedTarget {
-		logging.Errorf("Received request from %s with invalid 'target' parameter. Expected '%s', got '%s'", req.Host, forcedTarget, target)
+		logging.Errorf(nil, "Received request from %s with invalid 'target' parameter. Expected '%s', got '%s'", req.Host, forcedTarget, target)
 
 		return "", fmt.Errorf("Query parameter 'target' must be either omitted or set to %s", forcedTarget)
 	}
@@ -137,7 +137,7 @@ func MetricsHandler(rsp http.ResponseWriter, req *http.Request) {
 	} else {
 		metricGroupName, err := getMetricGroupName(metricGroup)
 		if err != nil {
-			logging.Errorf("Error finding metric group name: %s", err.Error())
+			logging.Errorf(err, "Error finding metric group name")
 
 			handleRequestLogSuffix = ""
 		} else {
@@ -148,8 +148,8 @@ func MetricsHandler(rsp http.ResponseWriter, req *http.Request) {
 
 	c, err := collector.GetCollector(target, metricGroup)
 	if err != nil {
-		errorMsg := fmt.Sprintf("Error instantiating metrics collector for host %s: %v\n", target, err)
-		logging.Error(errorMsg)
+		errorMsg := fmt.Sprintf("Error instantiating metrics collector for host %s", target)
+		logging.Error(err, errorMsg)
 		http.Error(rsp, errorMsg, http.StatusInternalServerError)
 		return
 	}
@@ -158,8 +158,8 @@ func MetricsHandler(rsp http.ResponseWriter, req *http.Request) {
 
 	metrics, err := c.Gather()
 	if err != nil {
-		errorMsg := fmt.Sprintf("Error collecting metrics for host %s: %v\n", target, err)
-		logging.Error(errorMsg)
+		errorMsg := fmt.Sprintf("Error collecting metrics for host %s", target)
+		logging.Error(err, errorMsg)
 		http.Error(rsp, errorMsg, http.StatusInternalServerError)
 		return
 	}

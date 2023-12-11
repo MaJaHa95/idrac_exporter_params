@@ -44,21 +44,25 @@ func Infof(fmt string, a ...interface{}) {
 	printf("INFO", fmt, a...)
 }
 
-func Error(a ...interface{}) {
+func Error(err error, a ...interface{}) {
 	print("ERROR", a...)
+	printf("%s", err.Error())
 }
 
-func Errorf(fmt string, a ...interface{}) {
+func Errorf(err error, fmt string, a ...interface{}) {
 	printf("ERROR", fmt, a...)
+	printf("%s", err.Error())
 }
 
-func Fatal(a ...interface{}) {
+func Fatal(err error, a ...interface{}) {
 	print("FATAL", a...)
+	printf("%s", err.Error())
 	os.Exit(1)
 }
 
-func Fatalf(fmt string, a ...interface{}) {
+func Fatalf(err error, fmt string, a ...interface{}) {
 	printf("FATAL", fmt, a...)
+	printf("%s", err.Error())
 	os.Exit(1)
 }
 

@@ -56,13 +56,13 @@ func (config *RootConfig) GetHostCfg(target string) *HostConfig {
 var Config RootConfig
 
 func parseError(s0, s1 string) {
-	logging.Fatalf("Error parsing configuration file: %s: %s", s0, s1)
+	logging.Fatalf(nil, "Error parsing configuration file: %s: %s", s0, s1)
 }
 
 func ReadConfigFile(fileName string) {
 	yamlFile, err := os.Open(fileName)
 	if err != nil {
-		logging.Fatalf("Error opening configuration file %s: %s", fileName, err)
+		logging.Fatalf(nil, "Error opening configuration file %s: %s", fileName, err)
 	}
 
 	err = yaml.NewDecoder(yamlFile).Decode(&Config)
@@ -80,11 +80,11 @@ func ReadConfigFile(fileName string) {
 	}
 
 	if Config.Timeout == 0 {
-		Config.Timeout = 10
+		Config.Timeout = 60
 	}
 
 	if Config.Retries == 0 {
-		Config.Retries = 1
+		Config.Retries = 3
 	}
 
 	if len(Config.Hosts) == 0 {
